@@ -1,0 +1,152 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Guardium.Client</title>
+    <script src="http://localhost:62531/js/signalr/dist/browser/signalr.js"></script>
+    
+    <script type="text/javascript">
+         
+        const uri = "http://localhost:34109"
+        /*
+         * =====================================
+         *  Helper Methods
+         * =====================================
+         */
+        function getParameterByName(name, url = window.location.href) {
+            name = name.replace(/[\[\]]/g, '\\$&');
+            var regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
+                results = regex.exec(url);
+            if (!results) return null;
+            if (!results[2]) return '';
+            return decodeURIComponent(results[2].replace(/\+/g, ' '));
+        }
+        function getRandomId() {
+            return "e" + Math.random();
+        }
+        /*
+         * =====================================
+         *  State Management
+         *  Sync UI with State
+         * =====================================
+         */
+        state = []; //current elements in view
+        function InitState(elementList) {
+            console.log(elementList);
+
+            for (var elm in elementList) {
+                state.push(elementList[elm]);               
+            }
+        } 
+
+
+        function refreshViewOnState() {
+            setErrorMessage('');
+            ce.innerHTML = '';
+            for (var elm in state) {
+                var li = document.createElement('li');
+                li.innerHTML = "<span>" + state[elm].content + "</span><a href=\"javascript: removeElement('" + state[elm].elementIdentifier + "');\" >[x]</a>"
+                ce.appendChild(li);
+            }
+        }
+         
+        /*
+        * =====================================
+        *  Bind SingalR to UI        
+        * =====================================
+        */
+
+        document.addEventListener("DOMContentLoaded", function () {
+            ce = document.getElementById("currentElements");
+
+            fetch(uri + "/paint/all?uuid=" + getParameterByName("uuid"),
+                {
+                    method: 'GET',
+                    headers: {                       
+                        'ip': getParameterByName("ip"),
+                    },
+                })
+                .then(resp => resp.json())
+                .then(data => InitState(data))
+                .then(data => refreshViewOnState())
+                .catch(error => console.error('Unable to get items.', error));
+
+            connection = new signalR.HubConnectionBuilder().withUrl(uri + "/paintSignalRHub").build();
+
+            connection.on("Refresh", function (uuid, operation, data) {
+
+                if (getParameterByName("uuid") != uuid) return;
+                if (operation == "Add") {
+                    console.log("Refresh invoked on Add: " + data)
+                    state.push(data);
+                }
+                if (operation == "Remove") {
+                    console.log("Refresh invoked on Remove: " + data)
+                    state = state.filter(function (elm, index, arr) {
+                        return elm.elementIdentifier != data ;
+                    });                    
+                }
+                refreshViewOnState();
+
+            });
+
+            connection.start();
+            
+        });
+
+        /*
+        * =====================================
+        *  UI events: Remove Element, Add Element        
+        * =====================================
+        */
+        function removeElement(elmId) {
+            fetch(uri + "/paint/delete?uuid=" + getParameterByName("uuid"), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'ip': getParameterByName("ip"),
+                },
+                body: JSON.stringify(elmId)
+            }).then(response => {
+                if (response.ok)
+                    console.log('data removed');
+                else
+                    return response.text().then(err => setErrorMessage(err));
+            }).catch(error => setErrorMessage(error))
+        }
+        
+        function addElement(elName) {
+            fetch(uri + "/paint/add?uuid=" + getParameterByName("uuid"), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'ip': getParameterByName("ip"),
+                },
+                body: JSON.stringify({ ElementIdentifier: getRandomId(), Content: elName })
+            }).then(response => {
+                    if (response.ok)
+                        console.log('data added');
+                    else
+                        return response.text().then(err => setErrorMessage(err) );
+                }).catch(error => setErrorMessage(error))
+        }
+
+        function setErrorMessage(err) {
+            var errorEl = document.getElementById("errorMsg");
+            errorEl.innerText = err;
+        }
+ 
+    </script>
+</head>
+<body>
+    <h1>welcome to Guardium Candidate's Interview Exercise</h1>
+    <h3>Current Shapes:</h3>
+    <ul id="currentElements">
+
+    </ul>
+    <br />
+    Add Element: <input type="text" id="elName" /><input type="button" value="Send" onclick="addElement(document.getElementById('elName').value)" />
+    <br />
+    <span style="color:red" id="errorMsg"></span>
+</body>
+</html>
